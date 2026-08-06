@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Fast Groq AI Request (~50ms response time)
+    // 1. Groq Request with explicit state matching
     const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -31,7 +31,7 @@ export default async function handler(req, res) {
         messages: [
           {
             role: 'system',
-            content: 'You are a home automation controller. Interpret user speech. Respond strictly with JSON formatted as {"state": "ON"} or {"state": "OFF"}. If ambiguous, default to {"state": "OFF"}.'
+            content: 'You are a smart home switch controller. Interpret user intent. Respond strictly with JSON: {"state": "ON"} or {"state": "OFF"}. Words like "on", "start", "enable", "light up" mean ON. Words like "off", "stop", "disable", "shut down", "turn off" mean OFF. Default to OFF if unsure.'
           },
           {
             role: 'user',
@@ -45,26 +45,31 @@ export default async function handler(req, res) {
 
     const groqData = await groqResponse.json();
     const content = JSON.parse(groqData.choices[0].message.content);
-    const command = content.state.toUpperCase();
+    const command = content.state.toUpperCase() === 'ON' ? 'ON' : 'OFF';
 
-    // 2. Optimized MQTT over WebSockets for Serverless
+    // 2. MQTT Publishing with guaranteed packet flush
     const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
-      connectTimeout: 4000,
-      reconnectPeriod: 0 // Prevents hanging on failure
+      connectTimeout: 5000,
+      reconnectPeriod: 0
     });
 
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         mqttClient.end(true);
-        reject(new Error('MQTT connection timed out'));
-      }, 4000);
+        reject(new Error('MQTT Timeout'));
+      }, 5000);
 
       mqttClient.on('connect', () => {
         mqttClient.publish('myuniqueuser123/esp32/led', command, { qos: 0 }, (err) => {
           clearTimeout(timeout);
-          mqttClient.end(true);
-          if (err) reject(err);
-          else resolve();
+          if (err) {
+            mqttClient.end(true);
+            return reject(err);
+          }
+          // Safely close connection AFTER message is sent
+          mqttClient.end(false, () => {
+            resolve();
+          });
         });
       });
 
