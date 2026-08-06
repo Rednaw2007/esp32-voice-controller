@@ -120,6 +120,8 @@
       };
 
       recognition.onresult = async (event) => {
+        recognition.stop(); // Stop listening immediately when speech is recognized!
+        
         const text = event.results[0][0].transcript;
         status.textContent = `Processing: "${text}"...`;
 
@@ -129,6 +131,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ speech: text })
           });
+// ... rest of the code remains the same
 
           const data = await response.json();
           if (data.success) {

@@ -19,6 +19,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    // 1. Fast Groq AI Request (~50ms response time)
     const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -26,11 +27,11 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama-3.1-8b-instant',
         messages: [
           {
             role: 'system',
-            content: 'You are a smart home automation controller. Interpret the user speech input. Respond strictly with a JSON object formatted as {"state": "ON"} or {"state": "OFF"}. If ambiguous, default to {"state": "OFF"}.'
+            content: 'You are a home automation controller. Interpret user speech. Respond strictly with JSON formatted as {"state": "ON"} or {"state": "OFF"}. If ambiguous, default to {"state": "OFF"}.'
           },
           {
             role: 'user',
@@ -46,18 +47,30 @@ export default async function handler(req, res) {
     const content = JSON.parse(groqData.choices[0].message.content);
     const command = content.state.toUpperCase();
 
-    const mqttClient = mqtt.connect('mqtt://broker.hivemq.com:1883');
+    // 2. Optimized MQTT over WebSockets for Serverless
+    const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+      connectTimeout: 4000,
+      reconnectPeriod: 0 // Prevents hanging on failure
+    });
 
     await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        mqttClient.end(true);
+        reject(new Error('MQTT connection timed out'));
+      }, 4000);
+
       mqttClient.on('connect', () => {
-        mqttClient.publish('myuniqueuser123/esp32/led', command, {}, (err) => {
-          mqttClient.end();
+        mqttClient.publish('myuniqueuser123/esp32/led', command, { qos: 0 }, (err) => {
+          clearTimeout(timeout);
+          mqttClient.end(true);
           if (err) reject(err);
           else resolve();
         });
       });
+
       mqttClient.on('error', (err) => {
-        mqttClient.end();
+        clearTimeout(timeout);
+        mqttClient.end(true);
         reject(err);
       });
     });
