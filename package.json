@@ -1,0 +1,10 @@
+{
+  "name": "esp32-voice-controller",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "serve public"
+  },
+  "dependencies": {
+    "mqtt": "^5.3.0"
+  }
+}
