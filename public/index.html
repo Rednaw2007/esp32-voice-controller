@@ -73,6 +73,17 @@
     let recognition;
     let isListening = false;
 
+    // Helper function for Text-to-Speech voice feedback
+    function speak(message) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // Stop any previous speech
+        const utterance = new SpeechSynthesisUtterance(message);
+        utterance.lang = 'en-US';
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
     function toggleSpeech() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
@@ -114,11 +125,20 @@
             status.textContent = `Command sent: "${text}"`;
             badge.textContent = `STATE: ${data.command}`;
             badge.className = `badge ${data.command}`;
+
+            // Voice confirmation output
+            if (data.command === 'ON') {
+              speak("Turning on");
+            } else if (data.command === 'OFF') {
+              speak("Turning off");
+            }
           } else {
             status.textContent = "Error processing speech intent.";
+            speak("Sorry, I could not process that request.");
           }
         } catch (err) {
           status.textContent = "Failed to communicate with API backend.";
+          speak("Error communicating with the server.");
         }
       };
 
