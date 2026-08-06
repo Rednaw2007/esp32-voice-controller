@@ -36,6 +36,16 @@
       margin: 1.5rem 0;
       transition: all 0.3s ease;
       box-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
+
+      /* Add these lines to remove the blue outline and tap highlight */
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Also clear focus and active states */
+    .mic-btn:focus,
+    .mic-btn:active {
+      outline: none;
     }
     .mic-btn.listening {
       background: #ef4444;
