@@ -5,15 +5,18 @@ function parseVoiceCommand(speechText) {
 
   const text = speechText.toLowerCase().trim();
   const sequence = [];
+
+  // Matches commands like "turn on", "turn off", "turn off for 5 seconds", etc.
   const regex = /(turn\s+)?(on|off)(\s+for\s+(\d+)\s*(sec|second)s?)?/gi;
   let match;
 
   while ((match = regex.exec(text)) !== null) {
     const action = match[2];
-    const duration = match[4] ? parseInt(match[4], 10) * 1000 : 0;
+    const duration = match[4] ? parseInt(match[4], 10) * 1000 : 0; // ms
     sequence.push({ state: action, durationMs: duration });
   }
 
+  // Fallback if regex didn't catch anything
   if (sequence.length === 0) {
     sequence.push({ state: text.includes('on') ? 'on' : 'off', durationMs: 0 });
   }
@@ -22,9 +25,11 @@ function parseVoiceCommand(speechText) {
 }
 
 export default async function handler(req, res) {
-  // Extract speech from POST body
   const { speech } = req.body || {};
   const commands = parseVoiceCommand(speech);
+
+  // Determine main state for simple web feedback
+  const primaryState = commands[0] ? commands[0].state.toUpperCase() : 'OFF';
 
   const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://broker.hivemq.com:1883';
   const mqttClient = mqtt.connect(brokerUrl);
@@ -58,7 +63,12 @@ export default async function handler(req, res) {
       });
     });
 
-    return res.status(200).json({ success: true, commands, speech });
+    return res.status(200).json({ 
+      success: true, 
+      command: primaryState, 
+      sequence: commands, 
+      speech 
+    });
   } catch (error) {
     console.error('API Error:', error);
     return res.status(500).json({ error: error.message });

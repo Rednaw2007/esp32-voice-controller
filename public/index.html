@@ -1,150 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Voice Controlled ESP32</title>
+  <meta charset="UTF-8">
+  <title>ESP32 Voice Controller</title>
   <style>
-    * { box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background-color: #0f172a;
-      color: #f8fafc;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      margin: 0;
-    }
-    .card {
-      background: #1e293b;
-      padding: 2.5rem;
-      border-radius: 20px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-      text-align: center;
-      width: 340px;
-    }
-    .mic-btn {
-      width: 100px;
-      height: 100px;
-      border-radius: 50%;
-      background: #2563eb;
-      color: white;
-      border: none;
-      font-size: 2.5rem;
-      cursor: pointer;
-      margin: 1.5rem 0;
-      transition: all 0.3s ease;
-      box-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
-
-      /* Add these lines to remove the blue outline and tap highlight */
-      outline: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    /* Also clear focus and active states */
-    .mic-btn:focus,
-    .mic-btn:active {
-      outline: none;
-    }
-    .mic-btn.listening {
-      background: #ef4444;
-      box-shadow: 0 0 30px rgba(239, 68, 68, 0.7);
-      transform: scale(1.08);
-    }
-    .status {
-      font-size: 0.95rem;
-      color: #94a3b8;
-      min-height: 40px;
-    }
-    .badge {
-      display: inline-block;
-      margin-top: 1rem;
-      padding: 8px 20px;
-      border-radius: 20px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      background: #334155;
-    }
-    .badge.ON { background: #22c55e; color: #fff; }
-    .badge.OFF { background: #64748b; color: #fff; }
+    body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    button { padding: 15px 30px; font-size: 18px; cursor: pointer; border-radius: 8px; border: none; background: #0070f3; color: white; }
+    button.listening { background: #e00; }
+    .badge { margin-top: 20px; padding: 10px 20px; font-weight: bold; border-radius: 4px; display: inline-block; }
+    .badge.ON { background: #4caf50; color: white; }
+    .badge.OFF { background: #f44336; color: white; }
   </style>
 </head>
 <body>
 
-  <div class="card">
-    <h2>ESP32 Voice Control</h2>
-    <button id="micBtn" class="mic-btn" onclick="toggleSpeech()">🎤</button>
-    <div id="statusText" class="status">Tap the microphone and speak</div>
-    <div id="stateBadge" class="badge">STATE: UNKNOWN</div>
-  </div>
+  <h1>ESP32 Voice Control</h1>
+  <button id="micBtn" onclick="toggleSpeech()">Start Listening</button>
+  
+  <div id="status" style="margin-top: 15px;">Press button and state a command...</div>
+  <div id="badge" class="badge OFF">STATE: OFF</div>
 
   <script>
+    const btn = document.getElementById('micBtn');
+    const status = document.getElementById('status');
+    const badge = document.getElementById('badge');
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition;
     let isListening = false;
 
-    // Helper function for Text-to-Speech voice feedback
-    function speak(message) {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // Stop any previous speech
-        const utterance = new SpeechSynthesisUtterance(message);
-        utterance.lang = 'en-US';
-        utterance.rate = 1.0;
-        window.speechSynthesis.speak(utterance);
-      }
-    }
-
-    function toggleSpeech() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        alert("Speech Recognition is not supported on this browser. Use Chrome or Edge.");
-        return;
-      }
-
-      const btn = document.getElementById('micBtn');
-      const status = document.getElementById('statusText');
-      const badge = document.getElementById('stateBadge');
-
-      if (isListening) {
-        recognition.stop();
-        return;
-      }
-
+    if (SpeechRecognition) {
       recognition = new SpeechRecognition();
+      recognition.continuous = false;
       recognition.lang = 'en-US';
 
       recognition.onstart = () => {
         isListening = true;
         btn.classList.add('listening');
-        status.textContent = "Listening for audio...";
+        btn.textContent = 'Listening...';
+        status.textContent = 'Listening for command...';
       };
 
       recognition.onresult = async (event) => {
-        recognition.stop(); // Stop listening immediately when speech is recognized!
-        
         const text = event.results[0][0].transcript;
-        status.textContent = `Processing: "${text}"...`;
+        status.textContent = `Processing: "${text}"`;
 
         try {
           const response = await fetch('/api/voice', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ speech: recognizedText }), // e.g. "turn off for 5 seconds then turn on"
-          })
-          .then(res => res.json())
-          .then(data => console.log('Response:', data))
-          .catch(err => console.error('Fetch error:', err));
-          // ... rest of the code remains the same
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ speech: text })
+          });
 
           const data = await response.json();
+
           if (data.success) {
             status.textContent = `Command sent: "${text}"`;
             badge.textContent = `STATE: ${data.command}`;
             badge.className = `badge ${data.command}`;
 
-            // Voice confirmation output
             if (data.command === 'ON') {
               speak("Turning on");
             } else if (data.command === 'OFF') {
@@ -155,6 +69,7 @@
             speak("Sorry, I could not process that request.");
           }
         } catch (err) {
+          console.error(err);
           status.textContent = "Failed to communicate with API backend.";
           speak("Error communicating with the server.");
         }
@@ -163,9 +78,26 @@
       recognition.onend = () => {
         isListening = false;
         btn.classList.remove('listening');
+        btn.textContent = 'Start Listening';
       };
+    } else {
+      status.textContent = 'Speech Recognition API is not supported in this browser.';
+    }
 
-      recognition.start();
+    function toggleSpeech() {
+      if (!recognition) return;
+      if (isListening) {
+        recognition.stop();
+      } else {
+        recognition.start();
+      }
+    }
+
+    function speak(message) {
+      if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(message);
+        window.speechSynthesis.speak(utterance);
+      }
     }
   </script>
 </body>
