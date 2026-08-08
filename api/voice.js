@@ -38,7 +38,7 @@ export default async function handler(req, res) {
 
       mqttClient.on('connect', () => {
         mqttClient.publish(
-          'myuniqueuser123/esp32/led',
+          'myuniqueuser123_test_v2/esp32/led',
           JSON.stringify({ sequence: commands }),
           { qos: 0 },
           (err) => {
