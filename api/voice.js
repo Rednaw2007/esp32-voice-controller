@@ -22,10 +22,10 @@ function parseVoiceCommand(speechText) {
 }
 
 export default async function handler(req, res) {
+  // Extract speech from POST body
   const { speech } = req.body || {};
   const commands = parseVoiceCommand(speech);
 
-  // Connect without username & password
   const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://broker.hivemq.com:1883';
   const mqttClient = mqtt.connect(brokerUrl);
 

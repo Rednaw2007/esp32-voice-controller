@@ -128,10 +128,15 @@
         try {
           const response = await fetch('/api/voice', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ speech: text })
-          });
-// ... rest of the code remains the same
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ speech: recognizedText }), // e.g. "turn off for 5 seconds then turn on"
+          })
+          .then(res => res.json())
+          .then(data => console.log('Response:', data))
+          .catch(err => console.error('Fetch error:', err));
+          // ... rest of the code remains the same
 
           const data = await response.json();
           if (data.success) {
