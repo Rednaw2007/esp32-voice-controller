@@ -1,76 +1,59 @@
 import mqtt from 'mqtt';
 
+// Simple parser for multi-step commands
+function parseVoiceCommand(speechText) {
+  const text = speechText.toLowerCase();
+  const sequence = [];
+
+  // Look for patterns like "turn [off/on] for [X] seconds"
+  const regex = /(turn\s+)?(on|off)\s*(for\s*(\d+)\s*sec(ond)?s?)?/g;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    const action = match[2]; // 'on' or 'off'
+    const duration = match[4] ? parseInt(match[4], 10) * 1000 : 0; // Convert sec to ms
+
+    sequence.push({ state: action, durationMs: duration });
+  }
+
+  // Fallback to a single command if regex didn't match cleanly
+  if (sequence.length === 0) {
+    sequence.push({ state: text.includes('on') ? 'on' : 'off', durationMs: 0 });
+  }
+
+  return sequence;
+}
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  const { speech } = req.body; // e.g., "turn off for 5 seconds then turn on for 1 second"
+  const commands = parseVoiceCommand(speech);
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const { speech } = req.body;
-  if (!speech) {
-    return res.status(400).json({ error: 'Missing speech input' });
-  }
+  const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL, {
+    username: process.env.MQTT_USER,
+    password: process.env.MQTT_PASSWORD,
+  });
 
   try {
-    // 1. Groq Request with explicit state matching
-    const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a smart home switch controller. Interpret user intent. Respond strictly with JSON: {"state": "ON"} or {"state": "OFF"}. Words like "on", "start", "enable", "light up" mean ON. Words like "off", "stop", "disable", "shut down", "turn off" mean OFF. Default to OFF if unsure.'
-          },
-          {
-            role: 'user',
-            content: speech
-          }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0
-      })
-    });
-
-    const groqData = await groqResponse.json();
-    const content = JSON.parse(groqData.choices[0].message.content);
-    const command = content.state.toUpperCase() === 'ON' ? 'ON' : 'OFF';
-
-    // 2. MQTT Publishing with guaranteed packet flush
-    const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
-      connectTimeout: 5000,
-      reconnectPeriod: 0
-    });
-
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         mqttClient.end(true);
-        reject(new Error('MQTT Timeout'));
+        reject(new Error('MQTT connection timeout'));
       }, 5000);
 
       mqttClient.on('connect', () => {
-        mqttClient.publish('myuniqueuser123/esp32/led', command, { qos: 0 }, (err) => {
-          clearTimeout(timeout);
-          if (err) {
-            mqttClient.end(true);
-            return reject(err);
+        // Send payload as a JSON string sequence
+        mqttClient.publish(
+          'myuniqueuser123/esp32/led',
+          JSON.stringify({ sequence: commands }),
+          { qos: 0 },
+          (err) => {
+            clearTimeout(timeout);
+            mqttClient.end(false, () => {
+              if (err) reject(err);
+              else resolve();
+            });
           }
-          // Safely close connection AFTER message is sent
-          mqttClient.end(false, () => {
-            resolve();
-          });
-        });
+        );
       });
 
       mqttClient.on('error', (err) => {
@@ -80,8 +63,7 @@ export default async function handler(req, res) {
       });
     });
 
-    return res.status(200).json({ success: true, command, speech });
-
+    return res.status(200).json({ success: true, commands, speech });
   } catch (error) {
     console.error('API Error:', error);
     return res.status(500).json({ error: error.message });
